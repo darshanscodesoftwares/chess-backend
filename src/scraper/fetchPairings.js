@@ -205,6 +205,7 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
 
   const browser = await puppeteer.launch({
     headless: isDebugMode ? false : "new",
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH, // Required for Render/production
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
