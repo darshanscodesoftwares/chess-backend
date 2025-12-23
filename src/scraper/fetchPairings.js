@@ -197,15 +197,49 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
   const playersUrl = `https://chess-results.com/tnr${dbKey}.aspx?lan=1&art=0&turdet=YES&SNode=S0`;
   const resultsUrl = `https://chess-results.com/Results.aspx?tnr=${dbKey}&lan=1&art=2&rd=${round}&flag=30&sid=${sidKey}`;
 
+  const startTime = Date.now();
   console.log("🔍 Starting Puppeteer...");
 
+  // ⚡ Use headless mode for speed (set DEBUG_BROWSER=true to see UI)
+  const isDebugMode = process.env.DEBUG_BROWSER === "true";
+
   const browser = await puppeteer.launch({
-    headless: false,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    headless: isDebugMode ? false : "new",
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--disable-gpu",
+    ],
     defaultViewport: null,
   });
 
   const page = await browser.newPage();
+
+  // ⚡ Block heavy resources to speed up page loads
+  await page.setRequestInterception(true);
+  page.on("request", (req) => {
+    const resourceType = req.resourceType();
+    const url = req.url();
+
+    // Block images, fonts, media, ads, analytics
+    if (
+      resourceType === "image" ||
+      resourceType === "font" ||
+      resourceType === "media" ||
+      url.includes("google-analytics") ||
+      url.includes("googletagmanager") ||
+      url.includes("doubleclick") ||
+      url.includes("analytics") ||
+      url.includes("/ads/")
+    ) {
+      req.abort();
+    } else {
+      // Allow: document, stylesheet, script, xhr, fetch
+      req.continue();
+    }
+  });
 
   // Force desktop mode
   await page.setExtraHTTPHeaders({
@@ -221,18 +255,19 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
   // ============= 1️⃣ Load Starting Rank Page =============
   console.log("🌐 Loading Starting Rank Page:", playersUrl);
 
+  // ⚡ Use domcontentloaded instead of networkidle2 for faster navigation
   await page.goto(playersUrl, {
-    waitUntil: "networkidle2",
-    timeout: 120000,
+    waitUntil: "domcontentloaded",
+    timeout: 60000,
   });
 
-  // Wait for ANY known table structure
+  // ⚡ Wait for ANY known table structure (targeted wait)
   const tableSelectors = ["table.CRs1", "table.CRs2", "table.CRs3", "table.CRs"];
   let tableFound = null;
 
   for (const selector of tableSelectors) {
     try {
-      await page.waitForSelector(selector, { timeout: 5000 });
+      await page.waitForSelector(selector, { timeout: 10000 });
       tableFound = selector;
       break;
     } catch {}
@@ -276,18 +311,19 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
   // ============= 2️⃣ Load Pairings Page =============
   console.log("🌐 Loading Pairings Page:", resultsUrl);
 
+  // ⚡ Use domcontentloaded for faster initial load
   await page.goto(resultsUrl, {
-    waitUntil: "networkidle2",
-    timeout: 60000,
+    waitUntil: "domcontentloaded",
+    timeout: 30000,
   });
 
   // ============= 🔐 AUTO-LOGIN (If Required) =============
   console.log("🔍 Checking for login panel...");
 
   try {
-    // Wait for login panel with long timeout (Chess-Results can be slow)
+    // ⚡ Reduced timeout - login panel appears quickly or not at all
     const loginPanelExists = await page.waitForSelector("#P1_Panel_Login", {
-      timeout: 30000,
+      timeout: 8000,
       visible: true,
     }).then(() => true).catch(() => false);
 
@@ -295,36 +331,28 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
       console.log("🔐 Login panel detected! Auto-filling credentials...");
 
       // Wait for all login inputs to be present
-      await page.waitForSelector("#P1_txt_tnr_login", { timeout: 5000 });
-      await page.waitForSelector("#P1_txt_SID", { timeout: 5000 });
-      await page.waitForSelector("#P1_cb_login", { timeout: 5000 });
+      await page.waitForSelector("#P1_txt_tnr_login", { timeout: 3000 });
+      await page.waitForSelector("#P1_txt_SID", { timeout: 3000 });
+      await page.waitForSelector("#P1_cb_login", { timeout: 3000 });
 
-      // Clear and fill DB Key input
-      await page.click("#P1_txt_tnr_login", { clickCount: 3 }); // Select all
-      await page.keyboard.press("Backspace"); // Clear
-      await page.type("#P1_txt_tnr_login", dbKey, { delay: 50 });
+      // ⚡ Clear and fill DB Key input (faster approach)
+      await page.click("#P1_txt_tnr_login", { clickCount: 3 });
+      await page.type("#P1_txt_tnr_login", dbKey, { delay: 10 });
       console.log("✅ DB Key filled:", dbKey);
 
-      // Clear and fill SID Key input
-      await page.click("#P1_txt_SID", { clickCount: 3 }); // Select all
-      await page.keyboard.press("Backspace"); // Clear
-      await page.type("#P1_txt_SID", sidKey, { delay: 50 });
+      // ⚡ Clear and fill SID Key input (faster approach)
+      await page.click("#P1_txt_SID", { clickCount: 3 });
+      await page.type("#P1_txt_SID", sidKey, { delay: 10 });
       console.log("✅ SID Key filled:", sidKey);
 
       // Click login button
       console.log("🔐 Clicking login button...");
       await page.click("#P1_cb_login");
 
-      // Wait for navigation or login panel to disappear
-      await Promise.race([
-        page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }),
-        page.waitForSelector("#P1_Panel_Login", { hidden: true, timeout: 30000 }),
-      ]);
+      // ⚡ Wait for login panel to disappear (faster than waiting for navigation)
+      await page.waitForSelector("#P1_Panel_Login", { hidden: true, timeout: 15000 });
 
       console.log("✅ Auto-login successful! Proceeding to scrape pairings...");
-
-      // Additional wait for results page to fully load
-      await page.waitForTimeout(2000);
     } else {
       console.log("ℹ️ No login panel detected - proceeding directly");
     }
@@ -343,7 +371,8 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
 
   // 1️⃣ Primary: Try disabled input field
   try {
-    await page.waitForSelector("#P1_txt_rd", { timeout: 15000 });
+    // ⚡ Reduced timeout - element appears quickly after login
+    await page.waitForSelector("#P1_txt_rd", { timeout: 8000 });
 
     detectedRound = await page.$eval(
       "#P1_txt_rd",
@@ -389,9 +418,10 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
 
   let pairingTable = null;
 
+  // ⚡ Reduced timeout - table appears quickly once page is ready
   for (const selector of pairingSelectors) {
     try {
-      await page.waitForSelector(selector, { timeout: 7000 });
+      await page.waitForSelector(selector, { timeout: 5000 });
       pairingTable = selector;
       break;
     } catch {}
@@ -472,6 +502,10 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
   ]);
 
   await browser.close();
+
+  // ⚡ Performance timing
+  const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+  console.log(`⚡ Total scraping time: ${totalTime}s`);
 
   return {
     round: detectedRound,

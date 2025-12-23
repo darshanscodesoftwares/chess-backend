@@ -5,6 +5,7 @@ const fetchPairings = require("../scraper/fetchPairings");
 const Arbiter = require("../models/Arbiter");
 const Assignment = require("../models/Assignment");
 const Round = require("../models/Round");
+const Tournament = require("../models/Tournament");
 const generateXML = require("../utils/xmlGenerator");   // ✅ Correct import
 const sendResults = require("../uploader/sendResults");
 
@@ -19,11 +20,109 @@ router.post("/admin/login", (req, res) => {
   return res.status(401).json({ success: false, error: "Invalid password" });
 });
 
+/* ------------------- TOURNAMENTS LIST ------------------- */
+router.get("/tournaments", async (req, res) => {
+  try {
+    // Get all saved tournaments, sorted by most recent first
+    const tournaments = await Tournament.find()
+      .sort({ createdAt: -1 })
+      .select("dbKey tournamentName baseLink sidKey createdAt");
+
+    return res.json({ success: true, tournaments });
+  } catch (err) {
+    console.error("❌ /tournaments:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* ------------------- DB KEYS LIST (FOR DROPDOWN) ------------------- */
+router.get("/db-keys", async (req, res) => {
+  try {
+    // Aggregate unique DB Keys from all sources (Tournament, Round, Assignment)
+    const dbKeysMap = new Map(); // Use Map to track unique dbKeys with most recent timestamp
+
+    // 1. Get DB Keys from Tournament collection
+    const tournaments = await Tournament.find()
+      .select("dbKey createdAt")
+      .lean();
+
+    tournaments.forEach((t) => {
+      if (t.dbKey) {
+        const existing = dbKeysMap.get(t.dbKey);
+        if (!existing || new Date(t.createdAt) > new Date(existing.createdAt)) {
+          dbKeysMap.set(t.dbKey, { dbKey: t.dbKey, createdAt: t.createdAt });
+        }
+      }
+    });
+
+    // 2. Get DB Keys from Round collection
+    const rounds = await Round.find()
+      .select("dbKey createdAt")
+      .lean();
+
+    rounds.forEach((r) => {
+      if (r.dbKey) {
+        const existing = dbKeysMap.get(r.dbKey);
+        if (!existing || new Date(r.createdAt) > new Date(existing.createdAt)) {
+          dbKeysMap.set(r.dbKey, { dbKey: r.dbKey, createdAt: r.createdAt });
+        }
+      }
+    });
+
+    // 3. Get DB Keys from Assignment collection
+    const assignments = await Assignment.find()
+      .select("dbKey createdAt")
+      .lean();
+
+    assignments.forEach((a) => {
+      if (a.dbKey) {
+        const existing = dbKeysMap.get(a.dbKey);
+        if (!existing || new Date(a.createdAt) > new Date(existing.createdAt)) {
+          dbKeysMap.set(a.dbKey, { dbKey: a.dbKey, createdAt: a.createdAt });
+        }
+      }
+    });
+
+    // Convert Map to array and sort by createdAt DESC (most recent first)
+    const dbKeys = Array.from(dbKeysMap.values()).sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
+
+    return res.json({ success: true, dbKeys });
+  } catch (err) {
+    console.error("❌ /db-keys:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 /* ------------------- SCRAPER ROUTES ------------------- */
 router.get("/tournament/keys", async (req, res) => {
   try {
     const keys = await fetchTournamentKeys(req.query.url);
     if (!keys) return res.status(400).json({ success: false });
+
+    const { dbKey, sidKey, round, tournamentName, baseLink } = keys;
+
+    // Save tournament metadata if available (idempotent - no duplicates)
+    if (dbKey && tournamentName && baseLink) {
+      try {
+        await Tournament.findOneAndUpdate(
+          { dbKey }, // Find by dbKey
+          {
+            dbKey,
+            tournamentName,
+            baseLink,
+            sidKey, // Optional, may vary per round
+          },
+          { upsert: true, new: true } // Create if doesn't exist, update if exists
+        );
+        console.log(`✅ Tournament metadata saved/updated: ${tournamentName} (${dbKey})`);
+      } catch (saveErr) {
+        console.error("❌ Error saving tournament metadata:", saveErr);
+        // Don't fail the request if save fails - continue with keys
+      }
+    }
+
     return res.json({ success: true, ...keys });
   } catch (err) {
     console.error("❌ /tournament/keys:", err);
