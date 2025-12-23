@@ -281,28 +281,102 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
     timeout: 60000,
   });
 
-  // ====== ROUND DETECTION (FIXED) ======
-  let detectedRound = round;
+  // ============= 🔐 AUTO-LOGIN (If Required) =============
+  console.log("🔍 Checking for login panel...");
 
+  try {
+    // Wait for login panel with long timeout (Chess-Results can be slow)
+    const loginPanelExists = await page.waitForSelector("#P1_Panel_Login", {
+      timeout: 30000,
+      visible: true,
+    }).then(() => true).catch(() => false);
+
+    if (loginPanelExists) {
+      console.log("🔐 Login panel detected! Auto-filling credentials...");
+
+      // Wait for all login inputs to be present
+      await page.waitForSelector("#P1_txt_tnr_login", { timeout: 5000 });
+      await page.waitForSelector("#P1_txt_SID", { timeout: 5000 });
+      await page.waitForSelector("#P1_cb_login", { timeout: 5000 });
+
+      // Clear and fill DB Key input
+      await page.click("#P1_txt_tnr_login", { clickCount: 3 }); // Select all
+      await page.keyboard.press("Backspace"); // Clear
+      await page.type("#P1_txt_tnr_login", dbKey, { delay: 50 });
+      console.log("✅ DB Key filled:", dbKey);
+
+      // Clear and fill SID Key input
+      await page.click("#P1_txt_SID", { clickCount: 3 }); // Select all
+      await page.keyboard.press("Backspace"); // Clear
+      await page.type("#P1_txt_SID", sidKey, { delay: 50 });
+      console.log("✅ SID Key filled:", sidKey);
+
+      // Click login button
+      console.log("🔐 Clicking login button...");
+      await page.click("#P1_cb_login");
+
+      // Wait for navigation or login panel to disappear
+      await Promise.race([
+        page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }),
+        page.waitForSelector("#P1_Panel_Login", { hidden: true, timeout: 30000 }),
+      ]);
+
+      console.log("✅ Auto-login successful! Proceeding to scrape pairings...");
+
+      // Additional wait for results page to fully load
+      await page.waitForTimeout(2000);
+    } else {
+      console.log("ℹ️ No login panel detected - proceeding directly");
+    }
+  } catch (loginErr) {
+    console.warn("⚠️ Auto-login failed or timed out:", loginErr.message);
+    console.warn("⚠️ Leaving browser open for manual fallback...");
+    // TODO: If Chess-Results changes login HTML, update selectors:
+    // #P1_Panel_Login, #P1_txt_tnr_login, #P1_txt_SID, #P1_cb_login
+
+    // Do NOT crash - attempt to continue scraping
+    // Manual intervention may be possible if browser stays open
+  }
+
+  // ====== ROUND DETECTION (FIXED) ======
+  let detectedRound = null;
+
+  // 1️⃣ Primary: Try disabled input field
   try {
     await page.waitForSelector("#P1_txt_rd", { timeout: 15000 });
 
     detectedRound = await page.$eval(
       "#P1_txt_rd",
-      (el) => el.getAttribute("value")?.trim()
+      (el) => el.getAttribute("value")?.trim() || el.value?.trim()
     );
-  } catch {
-    console.log("⚠️ Round number not found via input field.");
+
+    if (detectedRound) {
+      console.log("✅ Round detected from #P1_txt_rd input:", detectedRound);
+    }
+  } catch (err) {
+    console.log("⚠️ Round input field #P1_txt_rd not found or timeout");
   }
 
-  // Fallback to URL param
-  if (!detectedRound || detectedRound === "Unknown") {
+  // 2️⃣ Secondary: Fallback to URL parameter
+  if (!detectedRound || detectedRound === "" || detectedRound.toLowerCase() === "unknown") {
+    console.log("⚠️ Primary detection failed or returned invalid value, trying URL fallback...");
     const url = page.url();
     const params = new URLSearchParams(url.split("?")[1]);
-    detectedRound = params.get("rd") || round;
+    const urlRound = params.get("rd");
+
+    if (urlRound && urlRound !== "" && urlRound.toLowerCase() !== "unknown") {
+      detectedRound = urlRound.trim();
+      console.log("✅ Round detected from URL parameter:", detectedRound);
+    }
   }
 
-  console.log("🎯 Detected Round:", detectedRound);
+  // 3️⃣ Final validation: NEVER allow invalid values
+  if (!detectedRound || detectedRound === "" || detectedRound.toLowerCase() === "unknown" || detectedRound === "undefined") {
+    console.error("❌ CRITICAL: Round detection failed completely. Round is invalid:", detectedRound);
+    detectedRound = null; // Set to null instead of invalid string
+  }
+
+  console.log("🎯 Final Detected Round:", detectedRound);
 
   // ============= Pairings Table Detection =============
   const pairingSelectors = [

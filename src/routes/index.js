@@ -42,18 +42,53 @@ router.post("/tournament/pairings", async (req, res) => {
       });
     }
 
-    // 🟢 Use round from client IF provided (from fetchKeys)
-    // Otherwise fallback to scraping inside fetchPairings
+    console.log("📥 Client provided round:", clientRound);
+
+    // Pass clientRound to fetchPairings (used for URL construction)
     const { round: scrapedRound, pairings } = await fetchPairings(
       dbKey,
       sidKey,
       clientRound
     );
 
-    const finalRound = clientRound || scrapedRound || "Unknown";
+    console.log("🔍 Scraped round from page:", scrapedRound);
+
+    // ✅ CRITICAL FIX: Prioritize scraped round over client round
+    // Scraped round is the source of truth from the actual Chess-Results page
+    let finalRound = scrapedRound;
+
+    // Only use clientRound as last resort if scraping completely failed
+    if (!finalRound || finalRound === "" || finalRound === "undefined" || finalRound.toLowerCase() === "unknown") {
+      console.log("⚠️ Scraped round invalid, checking client round...");
+
+      if (clientRound && clientRound !== "" && clientRound !== "undefined" && clientRound.toLowerCase() !== "unknown") {
+        finalRound = clientRound;
+        console.log("✅ Using client round as fallback:", finalRound);
+      } else {
+        console.error("❌ CRITICAL: Both scraped and client rounds are invalid!");
+        return res.status(400).json({
+          success: false,
+          error: "Unable to determine round number. Both page scraping and client data failed.",
+        });
+      }
+    }
+
+    console.log("🎯 Final round to save:", finalRound);
+
+    // ✅ Absolute guard: NEVER save invalid round values
+    const invalidValues = ["", "unknown", "undefined", null];
+    if (invalidValues.includes(finalRound?.toLowerCase()) || !finalRound) {
+      console.error("❌ BLOCKED: Attempted to save invalid round:", finalRound);
+      return res.status(400).json({
+        success: false,
+        error: `Invalid round value detected: "${finalRound}". Cannot save to database.`,
+      });
+    }
 
     // Save round snapshot only if valid
     if (finalRound && pairings && pairings.length > 0) {
+      console.log(`💾 Saving round ${finalRound} with ${pairings.length} pairings to MongoDB...`);
+
       await Round.findOneAndUpdate(
         { dbKey, round: finalRound },
         {
@@ -70,6 +105,10 @@ router.post("/tournament/pairings", async (req, res) => {
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
+
+      console.log("✅ Round saved successfully");
+    } else {
+      console.log("⚠️ Not saving - missing pairings or invalid round");
     }
 
     return res.json({
@@ -97,32 +136,95 @@ router.get("/arbiters", async (req, res) => {
 
 /* ------------------- ASSIGNMENTS ------------------- */
 router.post("/assignments", async (req, res) => {
-  const token = crypto.randomBytes(16).toString("hex");
+  try {
+    const { dbKey, sidKey, round, arbiterId, boardFrom, boardTo, pairings } = req.body;
 
-  const { dbKey, sidKey, round, arbiterId, boardFrom, boardTo, pairings } = req.body;
+    // ✅ Validate round value
+    const invalidRoundValues = ["", "unknown", "undefined", null];
+    if (invalidRoundValues.includes(round?.toLowerCase()) || !round) {
+      console.error("❌ BLOCKED: Invalid round in assignment:", round);
+      return res.status(400).json({
+        success: false,
+        error: `Invalid round value: "${round}". Cannot create assignment.`,
+      });
+    }
 
-  const from = Number(boardFrom);
-  const to = Number(boardTo);
+    const from = Number(boardFrom);
+    const to = Number(boardTo);
 
-  const filteredPairings = (pairings || []).filter((p) => {
-    const b = Number(p.board);
-    return !isNaN(b) && b >= from && b <= to;
-  });
+    // Validation: Check for valid range
+    if (isNaN(from) || isNaN(to) || from <= 0 || to <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid board range. Boards must be positive numbers.",
+      });
+    }
 
-  const assignment = await Assignment.create({
-    token,
-    dbKey,
-    sidKey,
-    round,
-    arbiter: arbiterId,
-    boardFrom: from,
-    boardTo: to,
-    pairings: filteredPairings,
-    results: [],
-  });
+    if (from > to) {
+      return res.status(400).json({
+        success: false,
+        error: "Board 'from' cannot be greater than board 'to'.",
+      });
+    }
 
-  const shareUrl = `${process.env.BASE_URL}/arbiter/${token}`;
-  res.json({ success: true, shareUrl, assignment });
+    // Validation: Check for overlapping assignments in the same tournament/round
+    const existingAssignments = await Assignment.find({ dbKey, round });
+
+    for (const existing of existingAssignments) {
+      const existingFrom = existing.boardFrom;
+      const existingTo = existing.boardTo;
+
+      // Check if ranges overlap
+      // Overlap occurs if: from <= existingTo AND to >= existingFrom
+      if (from <= existingTo && to >= existingFrom) {
+        const arbiter = await Arbiter.findById(existing.arbiter);
+        return res.status(400).json({
+          success: false,
+          error: `Boards ${from}-${to} overlap with existing assignment (boards ${existingFrom}-${existingTo} assigned to ${arbiter?.name || 'an arbiter'}).`,
+        });
+      }
+    }
+
+    // Validation: Check if boards exist in pairings
+    const availableBoards = (pairings || []).map((p) => Number(p.board));
+    const requestedBoards = [];
+    for (let i = from; i <= to; i++) {
+      requestedBoards.push(i);
+    }
+
+    const missingBoards = requestedBoards.filter((b) => !availableBoards.includes(b));
+    if (missingBoards.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Boards ${missingBoards.join(", ")} do not exist in this round.`,
+      });
+    }
+
+    const token = crypto.randomBytes(16).toString("hex");
+
+    const filteredPairings = (pairings || []).filter((p) => {
+      const b = Number(p.board);
+      return !isNaN(b) && b >= from && b <= to;
+    });
+
+    const assignment = await Assignment.create({
+      token,
+      dbKey,
+      sidKey,
+      round,
+      arbiter: arbiterId,
+      boardFrom: from,
+      boardTo: to,
+      pairings: filteredPairings,
+      results: [],
+    });
+
+    const shareUrl = `${process.env.BASE_URL}/arbiter/${token}`;
+    res.json({ success: true, shareUrl, assignment });
+  } catch (err) {
+    console.error("❌ POST /assignments:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 router.get("/assignments", async (req, res) => {
@@ -140,6 +242,58 @@ router.get("/assignments", async (req, res) => {
     return res.json({ success: true, assignments });
   } catch (err) {
     console.error("❌ /assignments:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get("/assignments/availability", async (req, res) => {
+  try {
+    const { dbKey, round, totalBoards } = req.query;
+
+    if (!dbKey || !round || !totalBoards) {
+      return res.status(400).json({
+        success: false,
+        error: "dbKey, round, and totalBoards are required",
+      });
+    }
+
+    const total = Number(totalBoards);
+    if (isNaN(total) || total <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "totalBoards must be a positive number",
+      });
+    }
+
+    // Get all assignments for this tournament/round
+    const assignments = await Assignment.find({ dbKey, round }).populate("arbiter");
+
+    // Calculate assigned boards
+    const assignedBoardsSet = new Set();
+    assignments.forEach((assignment) => {
+      for (let i = assignment.boardFrom; i <= assignment.boardTo; i++) {
+        assignedBoardsSet.add(i);
+      }
+    });
+
+    const assignedCount = assignedBoardsSet.size;
+    const remainingCount = total - assignedCount;
+    const assignedBoards = Array.from(assignedBoardsSet).sort((a, b) => a - b);
+
+    return res.json({
+      success: true,
+      totalBoards: total,
+      assignedCount,
+      remainingCount,
+      assignedBoards,
+      assignments: assignments.map((a) => ({
+        arbiter: a.arbiter?.name || "Unknown",
+        boardFrom: a.boardFrom,
+        boardTo: a.boardTo,
+      })),
+    });
+  } catch (err) {
+    console.error("❌ /assignments/availability:", err);
     return res.status(500).json({ success: false, error: err.message });
   }
 });
