@@ -1,56 +1,204 @@
-# Chess Results Automation – Context & Fix Scope
+🚀 Production Readiness Audit & Environment Configuration (Frontend + Backend)
+📌 Context
 
-## Project Overview
-This project automates fetching chess tournament data from chess-results.com using scraping,
-displays round pairings, allows result entry via dropdowns, and generates Swiss-Manager–compatible XML.
+This project is now being deployed to Render with:
 
-Frontend and Backend are in **separate folders**:
-- Frontend runs on Vite (localhost:5173 / 5174)
-- Backend runs on Express (localhost:5000)
+Backend → Node.js + Puppeteer + MongoDB
 
-## Current Working State
-✅ Scraping DB Key and SID Key works  
-✅ Pairings and dropdowns render correctly  
-✅ Result normalization works  
-✅ XML generation works  
-✅ MongoDB integration is in progress  
-✅ Admin login UI exists in frontend  
-❌ Admin login API call is failing due to CORS / connection issue  
+Frontend → React (Vite)
 
-## Current Blocking Issue (ONLY FIX THIS)
-Frontend fails to call backend admin login API.
+Development is complete, but the codebase must now be made production-ready, specifically:
 
-### Errors Seen
-- CORS error:
-  Access-Control-Allow-Origin mismatch
-- net::ERR_FAILED
-- net::ERR_CONNECTION_REFUSED
+No hardcoded localhost
 
-### API Endpoint Involved
-POST /api/admin/login
+Correct use of environment variables
 
-Frontend Origin:
-- http://localhost:5173 or http://localhost:5174
+Shareable, hosted arbiter links
+
+Safe defaults for production
+
+Clear separation of frontend vs backend config
+
+🎯 Objective
+
+Perform a production readiness audit and apply minimal, safe changes so that:
+
+The app works correctly on Render
+
+Environment variables are used consistently
+
+Arbiter links use hosted frontend URL
+
+Puppeteer works in production
+
+No existing functionality breaks
+
+This is NOT a refactor, only a readiness pass.
+
+🧠 GLOBAL REQUIREMENTS (APPLY TO BOTH REPOS)
+1️⃣ Eliminate localhost Usage
+
+Claude must search for and fix any usage of:
+
+http://localhost
+
+127.0.0.1
+
+Rules:
+
+Replace with environment variables
+
+Do NOT hardcode Render URLs
+
+Use fallbacks only for local dev
+
+2️⃣ Correct Environment Variable Usage
+Backend must use:
+process.env.MONGO_URI
+process.env.BASE_URL
+process.env.PORT
+process.env.NODE_ENV
+process.env.PUPPETEER_EXECUTABLE_PATH
+
+Frontend must use:
+import.meta.env.VITE_API_BASE_URL
+
+
+❌ Do NOT access backend envs from frontend
+❌ Do NOT mix frontend & backend env logic
+
+3️⃣ Arbiter Link Generation (CRITICAL)
+
+All arbiter links must be generated using:
 
 Backend:
-- http://localhost:5000
 
-## Fix Requirements (VERY IMPORTANT)
-- Fix ONLY the admin login API connectivity issue
-- Correct CORS configuration so frontend can call backend
-- Ensure backend server is reachable
-- Do NOT refactor existing logic
-- Do NOT remove dropdowns or scraping logic
-- Do NOT redesign UI
-- Change code ONLY where required to fix this issue
+const baseUrl = process.env.BASE_URL;
 
-## Expected Result
-- Admin login POST request succeeds
-- No CORS errors
-- No connection refused errors
-- Frontend can authenticate admin successfully
 
-## Notes
-- MongoDB Atlas is being used (not localhost MongoDB)
-- Admin login is simple (hardcoded or minimal auth for now)
-- More features will be added later, but NOT in this fix
+Final link format:
+
+https://<frontend>.onrender.com/arbiter/:token
+
+
+❌ Never use window.location.origin
+❌ Never use localhost in link generation
+
+🧠 BACKEND-SPECIFIC REQUIREMENTS
+4️⃣ Server Startup (Render Safe)
+
+Ensure backend listens like:
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT);
+
+
+❌ Do NOT hardcode ports
+
+5️⃣ Puppeteer Production Safety
+
+Ensure Puppeteer launch includes:
+
+args: ["--no-sandbox", "--disable-setuid-sandbox"],
+executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
+
+
+Headless mode enabled by default
+
+Debug mode optional via env flag (if present)
+
+6️⃣ CORS Safety
+
+Ensure CORS:
+
+Allows frontend Render URL
+
+Uses BASE_URL where applicable
+
+Does NOT allow * in production unless already required
+
+🧠 FRONTEND-SPECIFIC REQUIREMENTS
+7️⃣ API Base URL
+
+All API calls must use:
+
+import.meta.env.VITE_API_BASE_URL
+
+
+❌ No hardcoded URLs
+❌ No fallback to localhost in production
+
+8️⃣ Environment Guards
+
+If useful, Claude may add:
+
+Console log on startup:
+
+“Running in production”
+
+API base URL being used
+
+This is optional but helpful.
+
+📁 Files Claude MUST Inspect
+Backend
+
+Server entry file
+
+Puppeteer logic
+
+Arbiter link generation
+
+Any config/constants file
+
+Frontend
+
+API service files
+
+Arbiter link usage
+
+Admin pages that call backend
+
+🚫 STRICT CONSTRAINTS (DO NOT BREAK)
+
+❌ Do NOT remove commented code
+
+❌ Do NOT refactor unrelated logic
+
+❌ Do NOT change API contracts
+
+❌ Do NOT add new dependencies
+
+❌ Do NOT hardcode production URLs
+
+✅ Expected Outcome
+
+After this task:
+
+App runs correctly on Render
+
+Arbiter links are shareable
+
+No localhost remains in production paths
+
+Frontend and backend configs are cleanly separated
+
+Environment variables control behavior
+
+Existing features continue to work
+
+🧪 Validation Checklist (Claude MUST self-verify)
+
+ No localhost in production code paths
+
+ Arbiter links use hosted frontend URL
+
+ Backend reads env vars correctly
+
+ Frontend reads VITE_API_BASE_URL
+
+ Puppeteer works in production
+
+ App starts correctly on Render
+
+ No commented code removed
