@@ -13,17 +13,14 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
 
 
 const browser = await puppeteer.launch({
-  headless: true,
-  executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+  headless: "new",
   args: [
     "--no-sandbox",
     "--disable-setuid-sandbox",
     "--disable-dev-shm-usage",
     "--disable-gpu",
-    "--no-zygote",
   ],
 });
-
 
   const page = await browser.newPage();
 
