@@ -1,4 +1,4 @@
-const puppeteer = require("puppeteer");
+const puppeteer = require("puppeteer-core");
 
 module.exports = async function fetchPairings(dbKey, sidKey, round) {
   if (!dbKey || !sidKey) {
@@ -12,14 +12,13 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
   console.log("🔍 Starting Puppeteer...");
 
   const browser = await puppeteer.launch({
-    headless: "new", // ALWAYS headless in production
+    headless: "new",
+    executablePath: "/usr/bin/chromium-browser", // ✅ system chromium
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-gpu",
-      "--no-zygote",
-      "--single-process",
     ],
   });
 
@@ -59,7 +58,7 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
       await page.waitForSelector(selector, { timeout: 15000 });
       tableFound = selector;
       break;
-    } catch {}
+    } catch { }
   }
 
   if (!tableFound) {
@@ -108,7 +107,7 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
   let detectedRound = null;
   try {
     detectedRound = await page.$eval("#P1_txt_rd", (el) => el.value?.trim());
-  } catch {}
+  } catch { }
 
   detectedRound = detectedRound || round || "1";
   console.log("🎯 Detected Round:", detectedRound);
@@ -129,7 +128,7 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
       await page.waitForSelector(selector, { timeout: 15000 });
       pairingTable = selector;
       break;
-    } catch {}
+    } catch { }
   }
 
   if (!pairingTable) {
