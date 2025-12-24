@@ -6,44 +6,40 @@ const { connectDB } = require("./src/utils/db");
 
 const app = express();
 
-// ⚡ Production-ready CORS configuration
+/* ================== CORS (EXPRESS 5 SAFE) ================== */
 const allowedOrigins = [
-  process.env.FRONTEND_URL, // Production frontend URL (e.g., https://frontend.onrender.com)
-  'http://localhost:5173',  // Vite dev server
-  'http://localhost:3000',  // Alternative local dev port
+  process.env.FRONTEND_URL,
+  "http://localhost:5173",
+  "http://localhost:3000",
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or Postman)
-    if (!origin) {
-      return callback(null, true);
-    }
+    if (!origin) return callback(null, true);
 
-    // Check if origin is in allowed list
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.warn(`⚠️ Blocked CORS request from: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
+      console.warn("❌ Blocked by CORS:", origin);
+      callback(new Error("Not allowed by CORS"));
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 }));
+
+/* =========================================================== */
 
 app.use(express.json());
 
-// API routes
 app.use("/api", routes);
 
-// Connect database
 connectDB();
 
 const PORT = process.env.PORT || 5000;
-const NODE_ENV = process.env.NODE_ENV || 'development';
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running on port ${PORT}`);
-  console.log(`📍 Environment: ${NODE_ENV}`);
-  console.log(`🔗 Allowed origins:`, allowedOrigins.filter(Boolean));
+  console.log(`🌍 Allowed origins:`, allowedOrigins.filter(Boolean));
 });
