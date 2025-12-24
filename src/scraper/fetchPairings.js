@@ -12,13 +12,37 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
   const startTime = Date.now();
   console.log("🔍 Starting Puppeteer with @sparticuz/chromium...");
 
+  // Memory-optimized Chrome args for Render's 512MB limit
+  const minimalArgs = [
+    ...chromium.args,
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--disable-gpu',
+    '--no-first-run',
+    '--no-zygote',
+    '--single-process',
+    '--disable-background-networking',
+    '--disable-default-apps',
+    '--disable-extensions',
+    '--disable-sync',
+    '--disable-translate',
+    '--hide-scrollbars',
+    '--metrics-recording-only',
+    '--mute-audio',
+    '--no-sandbox',
+    '--safebrowsing-disable-auto-update',
+  ];
+
   // Use @sparticuz/chromium for container/serverless environments
   const browser = await puppeteer.launch({
-    args: chromium.args,
-    defaultViewport: chromium.defaultViewport,
+    args: minimalArgs,
+    defaultViewport: { width: 1280, height: 720 },
     executablePath: await chromium.executablePath(),
     headless: chromium.headless,
+    timeout: 60000, // Increase browser launch timeout to 60s
   });
+
+  console.log("✅ Browser launched successfully");
 
   const page = await browser.newPage();
 
@@ -26,18 +50,16 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
   page.setDefaultNavigationTimeout(120000);
   page.setDefaultTimeout(120000);
 
-  // ⚡ Block heavy resources
+  // ⚡ Block heavy resources to save memory
   await page.setRequestInterception(true);
   page.on("request", (req) => {
     const type = req.resourceType();
-    if (["image", "font", "media"].includes(type)) {
+    if (["image", "font", "media", "stylesheet"].includes(type)) {
       req.abort();
     } else {
       req.continue();
     }
   });
-
-  await page.setViewport({ width: 1400, height: 900 });
   await page.setExtraHTTPHeaders({ "Accept-Language": "en-US,en;q=0.9" });
   await page.setUserAgent(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36"
