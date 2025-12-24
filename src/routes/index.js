@@ -11,6 +11,11 @@ const sendResults = require("../uploader/sendResults");
 
 const router = express.Router();
 
+/* ================== SCRAPING LOCK (prevents concurrent requests) ================== */
+let isScrapingInProgress = false;
+let scrapingStartTime = null;
+const SCRAPING_TIMEOUT = 180000; // 3 minutes max
+
 /* ------------------- ADMIN LOGIN ------------------- */
 router.post("/admin/login", (req, res) => {
   const { password } = req.body;
@@ -141,14 +146,41 @@ router.post("/tournament/pairings", async (req, res) => {
       });
     }
 
+    // ✅ Check if scraping is already in progress
+    if (isScrapingInProgress) {
+      const elapsed = Date.now() - scrapingStartTime;
+
+      // If previous scrape is stuck (> 3 min), reset the lock
+      if (elapsed > SCRAPING_TIMEOUT) {
+        console.log("⚠️ Previous scrape timed out, resetting lock...");
+        isScrapingInProgress = false;
+      } else {
+        console.log("⏳ Scraping already in progress, rejecting duplicate request");
+        return res.status(429).json({
+          success: false,
+          error: "Scraping is already in progress. Please wait for the current operation to complete.",
+          retryAfter: Math.ceil((SCRAPING_TIMEOUT - elapsed) / 1000),
+        });
+      }
+    }
+
+    // ✅ Set the lock
+    isScrapingInProgress = true;
+    scrapingStartTime = Date.now();
+
     console.log("📥 Client provided round:", clientRound);
 
     // Pass clientRound to fetchPairings (used for URL construction)
-    const { round: scrapedRound, pairings } = await fetchPairings(
-      dbKey,
-      sidKey,
-      clientRound
-    );
+    let scrapedRound, pairings;
+    try {
+      const result = await fetchPairings(dbKey, sidKey, clientRound);
+      scrapedRound = result.round;
+      pairings = result.pairings;
+    } finally {
+      // ✅ Always release the lock when done
+      isScrapingInProgress = false;
+      scrapingStartTime = null;
+    }
 
     console.log("🔍 Scraped round from page:", scrapedRound);
 
