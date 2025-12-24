@@ -1,1 +1,61 @@
-/.env
+# =========================
+# Node.js
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# Environment files
+# =========================
+.env
+.env.local
+.env.production
+.env.development
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Build / Cache
+# =========================
+.cache/
+dist/
+build/
+
+# =========================
+# Puppeteer / Chromium
+# =========================
+# (If puppeteer downloads Chromium locally)
+.local-chromium/
+.chromium/
+
+# =========================
+# Coverage / Tests
+# =========================
+coverage/
+
+# =========================
+# IDEs
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# Misc
+# =========================
+*.swp
+*.swo
+*.tmp
+
+node_modules/
