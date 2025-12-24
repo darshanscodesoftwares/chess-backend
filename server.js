@@ -6,41 +6,63 @@ const { connectDB } = require("./src/utils/db");
 
 const app = express();
 
-// ⚡ Production-ready CORS configuration
+/* ===============================
+   🔐 CORS CONFIGURATION (FIXED)
+   =============================== */
+
 const allowedOrigins = [
-  process.env.FRONTEND_URL, // Production frontend URL (e.g., https://frontend.onrender.com)
-  'http://localhost:5173',  // Vite dev server
-  'http://localhost:3000',  // Alternative local dev port
+  process.env.FRONTEND_URL,        // Production frontend (Render)
+  "http://localhost:5173",         // Vite dev
+  "http://localhost:3000",         // Alternate dev
 ];
 
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or Postman)
-    if (!origin) {
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow server-to-server, Postman, curl, etc.
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
-    // Check if origin is in allowed list
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.warn(`⚠️ Blocked CORS request from: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
+    console.warn(`⚠️ Blocked CORS request from: ${origin}`);
+    return callback(null, false); // DO NOT throw error
   },
-  credentials: true
-}));
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+// Apply CORS
+app.use(cors(corsOptions));
+
+// Explicitly handle preflight requests
+app.options("*", cors(corsOptions));
+
+/* ===============================
+   🧠 MIDDLEWARES
+   =============================== */
 
 app.use(express.json());
 
-// API routes
+/* ===============================
+   📡 ROUTES
+   =============================== */
+
 app.use("/api", routes);
 
-// Connect database
+/* ===============================
+   🗄️ DATABASE
+   =============================== */
+
 connectDB();
 
+/* ===============================
+   🚀 SERVER START
+   =============================== */
+
 const PORT = process.env.PORT || 5000;
-const NODE_ENV = process.env.NODE_ENV || 'development';
+const NODE_ENV = process.env.NODE_ENV || "development";
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running on port ${PORT}`);
