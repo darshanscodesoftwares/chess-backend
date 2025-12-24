@@ -1,4 +1,4 @@
-const puppeteer = require("puppeteer-core");
+const puppeteer = require("puppeteer");
 
 module.exports = async function fetchPairings(dbKey, sidKey, round) {
   if (!dbKey || !sidKey) {
@@ -11,16 +11,19 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
   const startTime = Date.now();
   console.log("🔍 Starting Puppeteer...");
 
-  const browser = await puppeteer.launch({
-    headless: "new",
-    executablePath: "/usr/bin/chromium-browser", // ✅ system chromium
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-    ],
-  });
+
+const browser = await puppeteer.launch({
+  headless: true,
+  executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+  args: [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--no-zygote",
+  ],
+});
+
 
   const page = await browser.newPage();
 
