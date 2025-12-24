@@ -33,6 +33,23 @@ app.use(cors({
 
 app.use(express.json());
 
+/* ================== HEALTH CHECK (for UptimeRobot) ================== */
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    message: "Chess Backend API is running",
+    health: "/health"
+  });
+});
+/* ==================================================================== */
+
 app.use("/api", routes);
 
 connectDB();
