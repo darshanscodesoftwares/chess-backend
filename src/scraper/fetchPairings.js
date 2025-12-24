@@ -11,16 +11,19 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
   const startTime = Date.now();
   console.log("🔍 Starting Puppeteer...");
 
-
-const browser = await puppeteer.launch({
-  headless: "new",
-  args: [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-  ],
-});
+  // Production-safe launch configuration for Render
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-software-rasterizer",
+      "--disable-extensions",
+      "--single-process",
+    ],
+  });
 
   const page = await browser.newPage();
 
