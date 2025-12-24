@@ -46,20 +46,51 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
   /* ================= STARTING LIST ================= */
 
   console.log("🌐 Loading Starting Rank Page");
-  await page.goto(playersUrl, { waitUntil: "domcontentloaded" });
+  await page.goto(playersUrl, { waitUntil: "networkidle2", timeout: 60000 });
 
-  const tableSelectors = ["table.CRs1", "table.CRs2", "table.CRs3", "table.CRs"];
+  // Wait a moment for any dynamic content to load
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  const tableSelectors = [
+    "table.CRs1",
+    "table.CRs2",
+    "table.CRs3",
+    "table.CRs",
+    "table[class^='CRs']",
+    ".CRs1",
+    ".CRs2",
+    "table"
+  ];
   let tableFound = null;
 
   for (const selector of tableSelectors) {
     try {
-      await page.waitForSelector(selector, { timeout: 15000 });
-      tableFound = selector;
-      break;
+      const element = await page.$(selector);
+      if (element) {
+        tableFound = selector;
+        console.log(`✅ Found table with selector: ${selector}`);
+        break;
+      }
     } catch { }
   }
 
+  // If still not found, try waiting with timeout
   if (!tableFound) {
+    for (const selector of tableSelectors.slice(0, 4)) {
+      try {
+        await page.waitForSelector(selector, { timeout: 10000 });
+        tableFound = selector;
+        console.log(`✅ Found table after wait: ${selector}`);
+        break;
+      } catch { }
+    }
+  }
+
+  if (!tableFound) {
+    // Debug: log page title and URL to understand what loaded
+    const title = await page.title();
+    const url = page.url();
+    console.log(`❌ Debug - Page title: ${title}, URL: ${url}`);
     await browser.close();
     throw new Error("STARTING_LIST_NOT_FOUND");
   }
@@ -87,7 +118,10 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
   /* ================= PAIRINGS PAGE ================= */
 
   console.log("🌐 Loading Pairings Page");
-  await page.goto(resultsUrl, { waitUntil: "domcontentloaded" });
+  await page.goto(resultsUrl, { waitUntil: "networkidle2", timeout: 60000 });
+
+  // Wait for page to settle
+  await new Promise(resolve => setTimeout(resolve, 1000));
 
   // Auto-login if required
   const loginPanel = await page.$("#P1_Panel_Login");
@@ -99,6 +133,10 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
     await page.click("#P1_cb_login");
 
     await page.waitForSelector("#P1_Panel_Login", { hidden: true, timeout: 20000 });
+
+    // Wait for page to reload after login
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    console.log("✅ Login completed, waiting for content...");
   }
 
   // Round detection
@@ -118,18 +156,41 @@ module.exports = async function fetchPairings(dbKey, sidKey, round) {
     "#P1_GridResult",
     "table.Grid",
     "table.tgrid",
+    "#P1_Paarungen",
+    "table[id*='Grid']",
+    "table[class*='Grid']",
   ];
 
   let pairingTable = null;
+
+  // First try quick check
   for (const selector of pairingSelectors) {
     try {
-      await page.waitForSelector(selector, { timeout: 15000 });
-      pairingTable = selector;
-      break;
+      const element = await page.$(selector);
+      if (element) {
+        pairingTable = selector;
+        console.log(`✅ Found pairings table: ${selector}`);
+        break;
+      }
     } catch { }
   }
 
+  // If not found, wait with timeout
   if (!pairingTable) {
+    for (const selector of pairingSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 10000 });
+        pairingTable = selector;
+        console.log(`✅ Found pairings table after wait: ${selector}`);
+        break;
+      } catch { }
+    }
+  }
+
+  if (!pairingTable) {
+    const title = await page.title();
+    const url = page.url();
+    console.log(`❌ Debug - Pairings page title: ${title}, URL: ${url}`);
     await browser.close();
     throw new Error("PAIRINGS_TABLE_NOT_FOUND");
   }
