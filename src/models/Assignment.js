@@ -29,6 +29,10 @@ const AssignmentSchema = new mongoose.Schema(
         result: String,
       },
     ],
+
+    // 🔐 Submission lock - once submitted, results cannot be edited
+    isSubmitted: { type: Boolean, default: false },
+    submittedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

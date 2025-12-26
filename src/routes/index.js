@@ -444,10 +444,53 @@ router.post("/assignments/by-token/:token/results", async (req, res) => {
     return res.status(404).json({ success: false, error: "Assignment not found" });
   }
 
+  // 🔐 Check if already submitted - reject edits
+  if (assignment.isSubmitted) {
+    return res.status(403).json({
+      success: false,
+      error: "Results have already been submitted and cannot be modified.",
+    });
+  }
+
   assignment.results = req.body.results;
   await assignment.save();
 
   res.json({ success: true });
+});
+
+/* ------------------- SUBMIT RESULTS (FINAL LOCK) ------------------- */
+router.post("/assignments/by-token/:token/submit", async (req, res) => {
+  try {
+    const assignment = await Assignment.findOne({ token: req.params.token });
+    if (!assignment) {
+      return res.status(404).json({ success: false, error: "Assignment not found" });
+    }
+
+    // 🔐 Prevent re-submission
+    if (assignment.isSubmitted) {
+      return res.status(403).json({
+        success: false,
+        error: "Results have already been submitted.",
+        submittedAt: assignment.submittedAt,
+      });
+    }
+
+    // 🔐 Lock the assignment
+    assignment.isSubmitted = true;
+    assignment.submittedAt = new Date();
+    await assignment.save();
+
+    console.log(`🔐 Assignment ${req.params.token} submitted and locked at ${assignment.submittedAt}`);
+
+    res.json({
+      success: true,
+      message: "Results submitted successfully. No further edits allowed.",
+      submittedAt: assignment.submittedAt,
+    });
+  } catch (err) {
+    console.error("❌ Error submitting results:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 /* ------------------- LIVE SUBMISSION TO CHESS-RESULTS ------------------- */
